@@ -16,6 +16,7 @@ const state = {
   pendingInterim: "",
   lastQueuedVoiceText: "",
   translatingSources: new Set(),
+  lastTranslationError: "",
   translationTimer: null,
   translationQueue: Promise.resolve(),
   pendingMemoryTree: "",
@@ -651,13 +652,13 @@ function showTranslationPending(source) {
   scrollToLatest("#translationResult");
 }
 
-function queueVoiceSegment(text) {
+function queueVoiceSegment(text, options = {}) {
   const clean = String(text || "").trim();
   if (!clean || clean === state.lastQueuedVoiceText) return;
   state.lastQueuedVoiceText = clean;
-  appendTranscript(clean, "");
+  if (options.recordTranscript !== false) appendTranscript(clean, "");
   showTranslationPending(clean);
-  saveCourseState();
+  if (options.recordTranscript !== false) saveCourseState();
   queueVoiceTranslation(clean);
 }
 
@@ -667,7 +668,7 @@ function flushPendingInterim() {
   state.pendingInterim = "";
   clearTimeout(state.translationTimer);
   state.translationTimer = null;
-  queueVoiceSegment(text);
+  queueVoiceSegment(text, { recordTranscript: false });
 }
 
 function scheduleInterimTranslation(text) {
@@ -718,7 +719,10 @@ ${cleanSource}`
     saveCourseState();
   } catch (error) {
     const message = `翻译失败：${error.message}`;
-    state.translationLog.push(message);
+    if (message !== state.lastTranslationError) {
+      state.translationLog.push(message);
+      state.lastTranslationError = message;
+    }
     $("#translationResult").textContent = state.translationLog.join("\n\n");
     $("#translationNotes").textContent = "请检查 API 页面里的 API Key、模型和服务地址。";
     scrollToLatest("#translationResult");
@@ -770,7 +774,7 @@ function createRecognition() {
       state.pendingInterim = "";
       clearTimeout(state.translationTimer);
       state.translationTimer = null;
-      queueVoiceSegment(cleanText);
+      queueVoiceSegment(cleanText, { recordTranscript: true });
     } else {
       const cleanInterim = interimText.trim();
       appendTranscript("", cleanInterim);
@@ -832,52 +836,66 @@ function stopVoiceTranslation() {
   updateVoiceUi("麦克风未开启", "已停止");
 }
 
-async function generateMemoryTreeForClass() {
-  const button = $("#generateMemoryTree");
-  const material = truncateText([
-    state.analysis ? `课件大纲和术语表：\n${analysisContext()}` : "",
-    state.transcript ? `课堂实时转写：\n${state.transcript}` : "",
-    state.translationLog.length ? `课堂实时译文全集：\n${state.translationLog.join("\n\n")}` : "",
-    $("#manualText").value.trim() ? `用户粘贴课件：\n${$("#manualText").value.trim()}` : "",
-    state.extractedText ? `上传课件文本：\n${state.extractedText}` : ""
-  ].filter(Boolean).join("\n\n"), 160000);
+function clearLectureRecords(options = {}) {
+  state.transcript = "";
+  state.interimTranscript = "";
+  state.pendingInterim = "";
+  state.lastQueuedVoiceText = "";
+  state.lastTranslation = "";
+  state.translationLog = [];
+  state.lastTranslationError = "";
+  state.translatingSources.clear();
+  clearTimeout(state.translationTimer);
+  state.translationTimer = null;
+  $("#liveTranscript").textContent = "老师说的话会实时显示在这里。";
+  $("#translationResult").textContent = "译文会显示在这里。";
+  $("#translationNotes").textContent = "";
+  saveCourseState();
+  if (!options.silent) toast("实时转写和译文记录已清空。");
+}
 
-  if (!material) {
-    toast("还没有课件、转写或译文，无法生成记忆树。");
-    return;
+function buildMemoryTreeTemplate() {
+  const courseName = $("#courseName").value.trim() || state.analysis?.courseTitle || "本节课";
+  const keyPoints = state.analysis?.keyPoints?.slice(0, 6) || [];
+  const terms = state.analysis?.terms?.slice(0, 6) || [];
+  const pitfalls = state.analysis?.translationPitfalls?.slice(0, 4) || [];
+  const transcriptHints = state.transcript
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean)
+    .slice(-4);
+
+  const lines = [courseName];
+  lines.push("├── 核心概念");
+  if (keyPoints.length) keyPoints.forEach(point => lines.push(`│   ├── ${point}`));
+  else transcriptHints.forEach(point => lines.push(`│   ├── ${point}`));
+  if (!keyPoints.length && !transcriptHints.length) lines.push("│   └── 待补充");
+
+  lines.push("├── 专业术语");
+  if (terms.length) {
+    terms.forEach(term => {
+      const source = term.source || term.term || "术语";
+      const translation = term.bestTranslation || term.translation || "待补充译法";
+      lines.push(`│   ├── ${source} -> ${translation}`);
+    });
+  } else {
+    lines.push("│   └── 待补充");
   }
 
+  lines.push("├── 易混淆点");
+  if (pitfalls.length) pitfalls.forEach(item => lines.push(`│   ├── ${item}`));
+  else lines.push("│   └── 待补充");
+
+  lines.push("└── 我的补充分支");
+  lines.push("    └── 点击节点可改名，点 + 可添加子分支");
+  return lines.join("\n");
+}
+
+function generateMemoryTreeForClass() {
   stopVoiceTranslation();
-  setBusy(button, true, "生成中");
-  try {
-    const content = await askAi([
-      {
-        role: "system",
-        content: "You are an academic study assistant. Create concise memory trees for international students. Distinguish academic content from jokes, small talk, attendance chatter, technical setup, classroom management, and unrelated personal remarks."
-      },
-      {
-        role: "user",
-        content: `本节课已经结束。请根据下面材料生成一棵适合复习的记忆树，目标语言：${$("#targetLanguage").value}。
-
-要求：
-- 用纯文本树状结构输出
-- 最多 4 层
-- 每个节点短而清楚
-- 包含核心概念、专业术语、易混淆点
-- 自动排除课堂玩笑话、闲聊、寒暄、点名、设备调试、与课程知识无关的内容
-- 如果某句话看起来像玩笑或临时插曲，但不影响课程知识结构，不要放进记忆树
-- 不要写额外说明
-
-材料：
-${material}`
-      }
-    ]);
-    openMemoryModal(content.trim());
-  } catch (error) {
-    toast(error.message);
-  } finally {
-    setBusy(button, false);
-  }
+  openMemoryModal(buildMemoryTreeTemplate());
+  clearLectureRecords({ silent: true });
+  toast("已生成可编辑记忆树模板，并清空本节转写和译文。");
 }
 
 async function readTextLikeFile(file) {
@@ -1024,6 +1042,7 @@ function resetCourse() {
   state.pendingInterim = "";
   state.lastQueuedVoiceText = "";
   state.translatingSources.clear();
+  state.lastTranslationError = "";
   clearTimeout(state.translationTimer);
   state.translationTimer = null;
   stopVoiceTranslation();
@@ -1092,6 +1111,7 @@ function bindEvents() {
   });
   $("#stopVoice").addEventListener("click", stopVoiceTranslation);
   $("#generateMemoryTree").addEventListener("click", generateMemoryTreeForClass);
+  $("#clearLectureRecords").addEventListener("click", () => clearLectureRecords());
   $("#closeMemoryModal").addEventListener("click", closeMemoryModal);
   $("#saveMemoryTree").addEventListener("click", savePendingMemoryTree);
   $("#memoryModal").addEventListener("click", event => {
