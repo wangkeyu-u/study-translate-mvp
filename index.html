@@ -123,11 +123,13 @@
               <div class="voice-toolbar">
                 <div>
                   <p id="voiceState" class="voice-state">麦克风未开启</p>
-                  <small>持续提取音频，按语音片段自动翻译</small>
+                  <small>点击上方“翻译”即开始听音频，停顿后立刻显示中文</small>
                 </div>
                 <div class="voice-actions">
-                  <button id="startVoice" class="primary-button">开始</button>
-                  <button id="stopVoice" class="icon-button" title="停止语音翻译">■</button>
+                  <button id="stopVoice" class="pause-button" title="暂停语音翻译">
+                    <span>■</span>
+                    暂停
+                  </button>
                 </div>
               </div>
               <div class="live-box">

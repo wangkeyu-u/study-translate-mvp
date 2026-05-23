@@ -630,6 +630,28 @@ body.is-listening .voice-state {
   gap: 8px;
 }
 
+.pause-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 104px;
+  height: 42px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 900;
+}
+
+.pause-button:hover {
+  background: rgba(255, 107, 133, 0.18);
+}
+
+.pause-button span {
+  font-size: 13px;
+}
+
 .live-box {
   display: grid;
   gap: 10px;

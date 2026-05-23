@@ -646,12 +646,12 @@ function bufferVoiceForTranslation(text, immediate = false) {
   if (!clean) return;
   state.translationBuffer = [state.translationBuffer, clean].filter(Boolean).join(" ");
   clearTimeout(state.translationTimer);
-  const shouldFlush = immediate || state.translationBuffer.length >= 120 || /[.!?。？！]$/.test(clean);
+  const shouldFlush = immediate || state.translationBuffer.length >= 80 || /[.!?。？！]$/.test(clean);
   if (shouldFlush) {
     flushTranslationBuffer();
     return;
   }
-  state.translationTimer = setTimeout(flushTranslationBuffer, 1800);
+  state.translationTimer = setTimeout(flushTranslationBuffer, 750);
 }
 
 function bufferInterimForTranslation(text) {
@@ -678,7 +678,7 @@ async function translateText(source) {
     const content = await askAi([
       {
         role: "system",
-        content: "You are a real-time academic interpreter for international students. Translate lecture speech accurately, preserve discipline-specific meaning, and keep the output concise."
+        content: "You are a real-time academic interpreter for international students. Translate English lecture speech into the target language immediately and concisely. Output only the translation text. Do not add explanations unless the source cannot be translated."
       },
       {
         role: "user",
@@ -689,13 +689,6 @@ ${useContext ? `课件重点和术语上下文：\n${analysisContext()}` : "不�
 请翻译下面课堂语音转写。输出格式：
 译文：
 ...
-
-术语处理：
-- 如果有课件上下文，请指出根据课件修正的难词。
-- 如果没有课件上下文，只给必要的术语说明。
-
-课堂理解提示：
-- 用一句话解释这段话的重点。
 
 课堂语音转写：
 ${source}`
@@ -1070,7 +1063,6 @@ function bindEvents() {
     $("#translatorPanel").classList.remove("hidden");
     startVoiceTranslation();
   });
-  $("#startVoice").addEventListener("click", startVoiceTranslation);
   $("#stopVoice").addEventListener("click", stopVoiceTranslation);
   $("#generateMemoryTree").addEventListener("click", generateMemoryTreeForClass);
   $("#closeMemoryModal").addEventListener("click", closeMemoryModal);
