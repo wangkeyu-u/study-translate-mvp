@@ -15,6 +15,7 @@ const state = {
   interimTranscript: "",
   pendingInterim: "",
   lastQueuedVoiceText: "",
+  translatingSources: new Set(),
   translationTimer: null,
   translationQueue: Promise.resolve(),
   pendingMemoryTree: "",
@@ -638,11 +639,24 @@ function appendTranscript(text, interim = "") {
   scrollToLatest("#liveTranscript");
 }
 
+function showTranslationPending(source) {
+  const clean = String(source || "").trim();
+  if (!clean) return;
+  const current = $("#translationResult").textContent.trim();
+  if (!current || current === "译文会显示在这里。") {
+    $("#translationResult").textContent = `正在翻译：${clean}`;
+  } else if (!current.includes(`正在翻译：${clean}`) && !state.translationLog.length) {
+    $("#translationResult").textContent = `${current}\n\n正在翻译：${clean}`;
+  }
+  scrollToLatest("#translationResult");
+}
+
 function queueVoiceSegment(text) {
   const clean = String(text || "").trim();
   if (!clean || clean === state.lastQueuedVoiceText) return;
   state.lastQueuedVoiceText = clean;
   appendTranscript(clean, "");
+  showTranslationPending(clean);
   saveCourseState();
   queueVoiceTranslation(clean);
 }
@@ -660,6 +674,7 @@ function scheduleInterimTranslation(text) {
   const clean = String(text || "").trim();
   if (!clean || clean === state.pendingInterim) return;
   state.pendingInterim = clean;
+  showTranslationPending(clean);
   clearTimeout(state.translationTimer);
   state.translationTimer = setTimeout(flushPendingInterim, 650);
 }
@@ -669,6 +684,10 @@ async function translateText(source) {
     toast("还没有识别到可以翻译的语音。");
     return;
   }
+  const cleanSource = String(source).trim();
+  if (state.translatingSources.has(cleanSource)) return;
+  state.translatingSources.add(cleanSource);
+  showTranslationPending(cleanSource);
 
   try {
     const useContext = Boolean(state.analysis);
@@ -688,7 +707,7 @@ ${useContext ? `课件重点和术语上下文：\n${analysisContext()}` : "不�
 ...
 
 课堂语音转写：
-${source}`
+${cleanSource}`
       }
     ]);
     state.lastTranslation = content;
@@ -698,12 +717,21 @@ ${source}`
     $("#translationNotes").textContent = state.analysis && useContext ? "已根据左侧提交的课件大纲优化专业词翻译。" : "当前使用普通实时语音翻译，不借助课件上下文。";
     saveCourseState();
   } catch (error) {
+    const message = `翻译失败：${error.message}`;
+    state.translationLog.push(message);
+    $("#translationResult").textContent = state.translationLog.join("\n\n");
+    $("#translationNotes").textContent = "请检查 API 页面里的 API Key、模型和服务地址。";
+    scrollToLatest("#translationResult");
     toast(error.message);
+  } finally {
+    state.translatingSources.delete(cleanSource);
   }
 }
 
 function queueVoiceTranslation(text) {
-  state.translationQueue = state.translationQueue.then(() => translateText(text));
+  state.translationQueue = state.translationQueue
+    .catch(() => {})
+    .then(() => translateText(text));
   return state.translationQueue;
 }
 
@@ -995,6 +1023,7 @@ function resetCourse() {
   state.interimTranscript = "";
   state.pendingInterim = "";
   state.lastQueuedVoiceText = "";
+  state.translatingSources.clear();
   clearTimeout(state.translationTimer);
   state.translationTimer = null;
   stopVoiceTranslation();
