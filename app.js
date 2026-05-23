@@ -12,6 +12,10 @@ const state = {
   listening: false,
   voiceShouldRun: false,
   transcript: "",
+  interimTranscript: "",
+  lastBufferedInterim: "",
+  translationBuffer: "",
+  translationTimer: null,
   translationQueue: Promise.resolve(),
   pendingMemoryTree: "",
   agentHistory: [],
@@ -92,6 +96,7 @@ function loadCourseState() {
     state.lastTranslation = saved.lastTranslation || "";
     state.translationLog = Array.isArray(saved.translationLog) ? saved.translationLog : [];
     state.transcript = saved.transcript || "";
+    state.interimTranscript = "";
     $("#courseName").value = saved.courseName || "";
     $("#targetLanguage").value = saved.targetLanguage || "中文";
     $("#manualText").value = saved.manualText || "";
@@ -620,9 +625,46 @@ function updateVoiceUi(status, badge) {
 }
 
 function appendTranscript(text, interim = "") {
-  const display = [state.transcript, interim].filter(Boolean).join(interim ? "\n" : "");
+  if (typeof text === "string" && text) state.transcript = [state.transcript, text].filter(Boolean).join("\n");
+  state.interimTranscript = interim || "";
+  const display = [state.transcript, state.interimTranscript].filter(Boolean).join(state.interimTranscript ? "\n" : "");
   $("#liveTranscript").textContent = display || "老师说的话会实时显示在这里。";
   scrollToLatest("#liveTranscript");
+}
+
+function flushTranslationBuffer() {
+  const text = state.translationBuffer.trim();
+  if (!text) return;
+  state.translationBuffer = "";
+  clearTimeout(state.translationTimer);
+  state.translationTimer = null;
+  queueVoiceTranslation(text);
+}
+
+function bufferVoiceForTranslation(text, immediate = false) {
+  const clean = String(text || "").trim();
+  if (!clean) return;
+  state.translationBuffer = [state.translationBuffer, clean].filter(Boolean).join(" ");
+  clearTimeout(state.translationTimer);
+  const shouldFlush = immediate || state.translationBuffer.length >= 120 || /[.!?。？！]$/.test(clean);
+  if (shouldFlush) {
+    flushTranslationBuffer();
+    return;
+  }
+  state.translationTimer = setTimeout(flushTranslationBuffer, 1800);
+}
+
+function bufferInterimForTranslation(text) {
+  const clean = String(text || "").trim();
+  if (!clean || clean === state.lastBufferedInterim) return;
+  if (clean.startsWith(state.lastBufferedInterim)) {
+    const delta = clean.slice(state.lastBufferedInterim.length).trim();
+    state.lastBufferedInterim = clean;
+    bufferVoiceForTranslation(delta || clean);
+    return;
+  }
+  state.lastBufferedInterim = clean;
+  bufferVoiceForTranslation(clean);
 }
 
 async function translateText(source) {
@@ -707,12 +749,13 @@ function createRecognition() {
 
     if (finalText.trim()) {
       const cleanText = finalText.trim();
-      state.transcript = [state.transcript, cleanText].filter(Boolean).join("\n");
-      appendTranscript("");
+      state.lastBufferedInterim = "";
+      appendTranscript(cleanText, "");
       saveCourseState();
-      queueVoiceTranslation(cleanText);
+      bufferVoiceForTranslation(cleanText, true);
     } else {
       appendTranscript(interimText.trim());
+      bufferInterimForTranslation(interimText.trim());
     }
   };
 
@@ -766,6 +809,7 @@ function stopVoiceTranslation() {
     state.recognition.stop();
   }
   state.listening = false;
+  flushTranslationBuffer();
   updateVoiceUi("麦克风未开启", "已停止");
 }
 
@@ -957,6 +1001,11 @@ function resetCourse() {
   state.translationLog = [];
   state.lastSummary = "";
   state.transcript = "";
+  state.interimTranscript = "";
+  state.lastBufferedInterim = "";
+  state.translationBuffer = "";
+  clearTimeout(state.translationTimer);
+  state.translationTimer = null;
   stopVoiceTranslation();
   $("#fileInput").value = "";
   $("#manualText").value = "";
