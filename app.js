@@ -13,8 +13,8 @@ const state = {
   voiceShouldRun: false,
   transcript: "",
   interimTranscript: "",
-  lastBufferedInterim: "",
-  translationBuffer: "",
+  pendingInterim: "",
+  lastQueuedVoiceText: "",
   translationTimer: null,
   translationQueue: Promise.resolve(),
   pendingMemoryTree: "",
@@ -625,46 +625,43 @@ function updateVoiceUi(status, badge) {
 }
 
 function appendTranscript(text, interim = "") {
-  if (typeof text === "string" && text) state.transcript = [state.transcript, text].filter(Boolean).join("\n");
+  const cleanText = String(text || "").trim();
+  if (cleanText) {
+    const lines = state.transcript.split("\n").filter(Boolean);
+    if (lines[lines.length - 1] !== cleanText) {
+      state.transcript = [...lines, cleanText].join("\n");
+    }
+  }
   state.interimTranscript = interim || "";
   const display = [state.transcript, state.interimTranscript].filter(Boolean).join(state.interimTranscript ? "\n" : "");
   $("#liveTranscript").textContent = display || "老师说的话会实时显示在这里。";
   scrollToLatest("#liveTranscript");
 }
 
-function flushTranslationBuffer() {
-  const text = state.translationBuffer.trim();
+function queueVoiceSegment(text) {
+  const clean = String(text || "").trim();
+  if (!clean || clean === state.lastQueuedVoiceText) return;
+  state.lastQueuedVoiceText = clean;
+  appendTranscript(clean, "");
+  saveCourseState();
+  queueVoiceTranslation(clean);
+}
+
+function flushPendingInterim() {
+  const text = state.pendingInterim.trim();
   if (!text) return;
-  state.translationBuffer = "";
+  state.pendingInterim = "";
   clearTimeout(state.translationTimer);
   state.translationTimer = null;
-  queueVoiceTranslation(text);
+  queueVoiceSegment(text);
 }
 
-function bufferVoiceForTranslation(text, immediate = false) {
+function scheduleInterimTranslation(text) {
   const clean = String(text || "").trim();
-  if (!clean) return;
-  state.translationBuffer = [state.translationBuffer, clean].filter(Boolean).join(" ");
+  if (!clean || clean === state.pendingInterim) return;
+  state.pendingInterim = clean;
   clearTimeout(state.translationTimer);
-  const shouldFlush = immediate || state.translationBuffer.length >= 80 || /[.!?。？！]$/.test(clean);
-  if (shouldFlush) {
-    flushTranslationBuffer();
-    return;
-  }
-  state.translationTimer = setTimeout(flushTranslationBuffer, 750);
-}
-
-function bufferInterimForTranslation(text) {
-  const clean = String(text || "").trim();
-  if (!clean || clean === state.lastBufferedInterim) return;
-  if (clean.startsWith(state.lastBufferedInterim)) {
-    const delta = clean.slice(state.lastBufferedInterim.length).trim();
-    state.lastBufferedInterim = clean;
-    bufferVoiceForTranslation(delta || clean);
-    return;
-  }
-  state.lastBufferedInterim = clean;
-  bufferVoiceForTranslation(clean);
+  state.translationTimer = setTimeout(flushPendingInterim, 650);
 }
 
 async function translateText(source) {
@@ -742,13 +739,14 @@ function createRecognition() {
 
     if (finalText.trim()) {
       const cleanText = finalText.trim();
-      state.lastBufferedInterim = "";
-      appendTranscript(cleanText, "");
-      saveCourseState();
-      bufferVoiceForTranslation(cleanText, true);
+      state.pendingInterim = "";
+      clearTimeout(state.translationTimer);
+      state.translationTimer = null;
+      queueVoiceSegment(cleanText);
     } else {
-      appendTranscript(interimText.trim());
-      bufferInterimForTranslation(interimText.trim());
+      const cleanInterim = interimText.trim();
+      appendTranscript("", cleanInterim);
+      scheduleInterimTranslation(cleanInterim);
     }
   };
 
@@ -802,7 +800,7 @@ function stopVoiceTranslation() {
     state.recognition.stop();
   }
   state.listening = false;
-  flushTranslationBuffer();
+  flushPendingInterim();
   updateVoiceUi("麦克风未开启", "已停止");
 }
 
@@ -995,8 +993,8 @@ function resetCourse() {
   state.lastSummary = "";
   state.transcript = "";
   state.interimTranscript = "";
-  state.lastBufferedInterim = "";
-  state.translationBuffer = "";
+  state.pendingInterim = "";
+  state.lastQueuedVoiceText = "";
   clearTimeout(state.translationTimer);
   state.translationTimer = null;
   stopVoiceTranslation();
