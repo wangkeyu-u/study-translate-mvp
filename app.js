@@ -15,10 +15,12 @@ const state = {
   interimTranscript: "",
   pendingInterim: "",
   lastQueuedVoiceText: "",
+  voiceSegmentSignatures: new Set(),
   translatingSources: new Set(),
   lastTranslationError: "",
   translationTimer: null,
   translationQueue: Promise.resolve(),
+  lectureRevision: 0,
   pendingMemoryTree: "",
   agentHistory: [],
   agentComposing: false,
@@ -99,6 +101,12 @@ function loadCourseState() {
     state.translationLog = Array.isArray(saved.translationLog) ? saved.translationLog : [];
     state.transcript = saved.transcript || "";
     state.interimTranscript = "";
+    state.voiceSegmentSignatures = new Set(
+      state.transcript
+        .split("\n")
+        .map(normalizeVoiceSegment)
+        .filter(Boolean)
+    );
     $("#courseName").value = saved.courseName || "";
     $("#targetLanguage").value = saved.targetLanguage || "中文";
     $("#manualText").value = saved.manualText || "";
@@ -215,6 +223,21 @@ function scrollToLatest(selector) {
   requestAnimationFrame(() => {
     el.scrollTop = el.scrollHeight;
   });
+}
+
+function normalizeVoiceSegment(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLikelySpeechSegment(text) {
+  const clean = String(text || "").trim();
+  if (!clean) return false;
+  if (!/[a-zA-Z]/.test(clean)) return false;
+  return normalizeVoiceSegment(clean).length >= 2;
 }
 
 async function askAi(messages, options = {}) {
@@ -643,18 +666,15 @@ function appendTranscript(text, interim = "") {
 function showTranslationPending(source) {
   const clean = String(source || "").trim();
   if (!clean) return;
-  const current = $("#translationResult").textContent.trim();
-  if (!current || current === "译文会显示在这里。") {
-    $("#translationResult").textContent = `正在翻译：${clean}`;
-  } else if (!current.includes(`正在翻译：${clean}`) && !state.translationLog.length) {
-    $("#translationResult").textContent = `${current}\n\n正在翻译：${clean}`;
-  }
-  scrollToLatest("#translationResult");
+  $("#translationNotes").textContent = `正在翻译最新一句：${clean}`;
 }
 
 function queueVoiceSegment(text, options = {}) {
   const clean = String(text || "").trim();
-  if (!clean || clean === state.lastQueuedVoiceText) return;
+  if (!isLikelySpeechSegment(clean)) return;
+  const signature = normalizeVoiceSegment(clean);
+  if (!signature || state.voiceSegmentSignatures.has(signature)) return;
+  state.voiceSegmentSignatures.add(signature);
   state.lastQueuedVoiceText = clean;
   if (options.recordTranscript !== false) appendTranscript(clean, "");
   showTranslationPending(clean);
@@ -662,25 +682,7 @@ function queueVoiceSegment(text, options = {}) {
   queueVoiceTranslation(clean);
 }
 
-function flushPendingInterim() {
-  const text = state.pendingInterim.trim();
-  if (!text) return;
-  state.pendingInterim = "";
-  clearTimeout(state.translationTimer);
-  state.translationTimer = null;
-  queueVoiceSegment(text, { recordTranscript: false });
-}
-
-function scheduleInterimTranslation(text) {
-  const clean = String(text || "").trim();
-  if (!clean || clean === state.pendingInterim) return;
-  state.pendingInterim = clean;
-  showTranslationPending(clean);
-  clearTimeout(state.translationTimer);
-  state.translationTimer = setTimeout(flushPendingInterim, 650);
-}
-
-async function translateText(source) {
+async function translateText(source, revision = state.lectureRevision) {
   if (!source) {
     toast("还没有识别到可以翻译的语音。");
     return;
@@ -711,13 +713,16 @@ ${useContext ? `课件重点和术语上下文：\n${analysisContext()}` : "不�
 ${cleanSource}`
       }
     ]);
-    state.lastTranslation = content;
-    state.translationLog.push(content);
+    const translation = content.replace(/^译文[:：]\s*/i, "").trim();
+    if (revision !== state.lectureRevision) return;
+    state.lastTranslation = translation;
+    state.translationLog.push(translation);
     $("#translationResult").textContent = state.translationLog.join("\n\n");
     scrollToLatest("#translationResult");
     $("#translationNotes").textContent = state.analysis && useContext ? "已根据左侧提交的课件大纲优化专业词翻译。" : "当前使用普通实时语音翻译，不借助课件上下文。";
     saveCourseState();
   } catch (error) {
+    if (revision !== state.lectureRevision) return;
     const message = `翻译失败：${error.message}`;
     if (message !== state.lastTranslationError) {
       state.translationLog.push(message);
@@ -733,9 +738,10 @@ ${cleanSource}`
 }
 
 function queueVoiceTranslation(text) {
+  const revision = state.lectureRevision;
   state.translationQueue = state.translationQueue
     .catch(() => {})
-    .then(() => translateText(text));
+    .then(() => translateText(text, revision));
   return state.translationQueue;
 }
 
@@ -777,8 +783,8 @@ function createRecognition() {
       queueVoiceSegment(cleanText, { recordTranscript: true });
     } else {
       const cleanInterim = interimText.trim();
+      state.pendingInterim = cleanInterim;
       appendTranscript("", cleanInterim);
-      scheduleInterimTranslation(cleanInterim);
     }
   };
 
@@ -832,11 +838,14 @@ function stopVoiceTranslation() {
     state.recognition.stop();
   }
   state.listening = false;
-  flushPendingInterim();
+  state.pendingInterim = "";
+  state.interimTranscript = "";
+  appendTranscript("", "");
   updateVoiceUi("麦克风未开启", "已停止");
 }
 
 function clearLectureRecords(options = {}) {
+  state.lectureRevision += 1;
   state.transcript = "";
   state.interimTranscript = "";
   state.pendingInterim = "";
@@ -844,6 +853,7 @@ function clearLectureRecords(options = {}) {
   state.lastTranslation = "";
   state.translationLog = [];
   state.lastTranslationError = "";
+  state.voiceSegmentSignatures.clear();
   state.translatingSources.clear();
   clearTimeout(state.translationTimer);
   state.translationTimer = null;
@@ -1031,6 +1041,7 @@ function setupNavigation() {
 }
 
 function resetCourse() {
+  state.lectureRevision += 1;
   state.extractedText = "";
   state.fileNames = [];
   state.analysis = null;
@@ -1041,6 +1052,7 @@ function resetCourse() {
   state.interimTranscript = "";
   state.pendingInterim = "";
   state.lastQueuedVoiceText = "";
+  state.voiceSegmentSignatures.clear();
   state.translatingSources.clear();
   state.lastTranslationError = "";
   clearTimeout(state.translationTimer);
