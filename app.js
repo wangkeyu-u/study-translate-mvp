@@ -658,15 +658,39 @@ function appendTranscript(text, interim = "") {
     }
   }
   state.interimTranscript = interim || "";
+  renderLiveTranscript();
+}
+
+function renderLiveTranscript() {
   const display = [state.transcript, state.interimTranscript].filter(Boolean).join(state.interimTranscript ? "\n" : "");
   $("#liveTranscript").textContent = display || "老师说的话会实时显示在这里。";
   scrollToLatest("#liveTranscript");
 }
 
+function replaceTranscriptLine(original, replacement) {
+  const cleanReplacement = String(replacement || "").trim();
+  if (!cleanReplacement) return;
+  const originalSignature = normalizeVoiceSegment(original);
+  const lines = state.transcript.split("\n").filter(Boolean);
+  const index = lines
+    .map(normalizeVoiceSegment)
+    .lastIndexOf(originalSignature);
+
+  if (index >= 0) {
+    lines[index] = cleanReplacement;
+  } else if (lines[lines.length - 1] !== cleanReplacement) {
+    lines.push(cleanReplacement);
+  }
+
+  state.transcript = lines.join("\n");
+  state.voiceSegmentSignatures.add(normalizeVoiceSegment(cleanReplacement));
+  renderLiveTranscript();
+}
+
 function showTranslationPending(source) {
   const clean = String(source || "").trim();
   if (!clean) return;
-  $("#translationNotes").textContent = `正在翻译最新一句：${clean}`;
+  $("#translationNotes").textContent = `正在校正并翻译最新一句：${clean}`;
 }
 
 function queueVoiceSegment(text, options = {}) {
@@ -680,6 +704,22 @@ function queueVoiceSegment(text, options = {}) {
   showTranslationPending(clean);
   if (options.recordTranscript !== false) saveCourseState();
   queueVoiceTranslation(clean);
+}
+
+function parseSpeechAiResult(content, source) {
+  const raw = String(content || "").trim();
+  try {
+    const parsed = safeJsonParse(raw);
+    return {
+      correctedTranscript: String(parsed.correctedTranscript || parsed.corrected || source).trim(),
+      translation: String(parsed.translation || parsed.translatedText || parsed.译文 || "").trim()
+    };
+  } catch {
+    return {
+      correctedTranscript: source,
+      translation: raw.replace(/^译文[:：]\s*/i, "").trim()
+    };
+  }
 }
 
 async function translateText(source, revision = state.lectureRevision) {
@@ -697,7 +737,7 @@ async function translateText(source, revision = state.lectureRevision) {
     const content = await askAi([
       {
         role: "system",
-        content: "You are a real-time academic interpreter for international students. Translate English lecture speech into the target language immediately and concisely. Output only the translation text. Do not add explanations unless the source cannot be translated."
+        content: "You are a real-time academic lecture interpreter. First lightly repair English ASR transcript errors, oral grammar issues, and obvious missing words. Keep the speaker's meaning, do not invent unrelated content, and preserve academic terminology. Then translate into the target language. Return strict JSON only."
       },
       {
         role: "user",
@@ -705,21 +745,30 @@ async function translateText(source, revision = state.lectureRevision) {
 课程名称：${$("#courseName").value || "未命名课程"}
 ${useContext ? `课件重点和术语上下文：\n${analysisContext()}` : "不要使用课件上下文。"}
 
-请翻译下面课堂语音转写。输出格式：
-译文：
-...
+请处理下面这一句课堂语音转写。
+要求：
+1. correctedTranscript: 用自然课堂口语英文轻量校正语法、误听词和明显缺词。
+2. translation: 翻译 correctedTranscript，输出自然中文。
+3. 不要解释，不要输出 Markdown。
+4. 如果无法确定缺失词，不要乱补，保留原意。
+
+输出 JSON 格式：
+{"correctedTranscript":"...","translation":"..."}
 
 课堂语音转写：
 ${cleanSource}`
       }
     ]);
-    const translation = content.replace(/^译文[:：]\s*/i, "").trim();
+    const result = parseSpeechAiResult(content, cleanSource);
+    const correctedTranscript = result.correctedTranscript || cleanSource;
+    const translation = result.translation || content.replace(/^译文[:：]\s*/i, "").trim();
     if (revision !== state.lectureRevision) return;
+    replaceTranscriptLine(cleanSource, correctedTranscript);
     state.lastTranslation = translation;
     state.translationLog.push(translation);
     $("#translationResult").textContent = state.translationLog.join("\n\n");
     scrollToLatest("#translationResult");
-    $("#translationNotes").textContent = state.analysis && useContext ? "已根据左侧提交的课件大纲优化专业词翻译。" : "当前使用普通实时语音翻译，不借助课件上下文。";
+    $("#translationNotes").textContent = state.analysis && useContext ? "已校正英文转写，并根据左侧课件大纲优化专业词翻译。" : "已校正英文转写，并完成普通实时语音翻译。";
     saveCourseState();
   } catch (error) {
     if (revision !== state.lectureRevision) return;
