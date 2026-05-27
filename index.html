@@ -19,6 +19,8 @@
         <button id="resetCourse" class="icon-button" title="清空课程">↺</button>
       </header>
 
+      <!-- Home is the primary classroom workflow: prepare course context on the
+           left, then use it to enhance live voice translation on the right. -->
       <section id="homeScreen" class="screen active">
         <section class="home-hero">
           <div>
@@ -73,7 +75,10 @@
               </li>
               <li>
                 <strong>第二步：点击提交</strong>
-                <button id="analyzeBtn" class="primary-button full-button">提交并生成大纲</button>
+                <div class="button-row">
+                  <button id="analyzeBtn" class="primary-button full-button">提交并生成大纲</button>
+                  <button id="loadDemoCourse" class="secondary-button" type="button">演示课件</button>
+                </div>
               </li>
               <li>
                 <strong>第三步：查看 AI 课件大纲</strong>
@@ -126,6 +131,7 @@
                   <small>点击上方“翻译”即开始听音频，AI 会校正英文转写并生成对应中文</small>
                 </div>
                 <div class="voice-actions">
+                  <button id="demoVoice" class="secondary-button" type="button" title="模拟一句课堂语音">演示一句</button>
                   <button id="stopVoice" class="pause-button" title="暂停语音翻译">
                     <span>■</span>
                     暂停
@@ -165,6 +171,8 @@
         </section>
       </section>
 
+      <!-- API settings are isolated from the classroom UI so users understand
+           that model credentials are local configuration, not course content. -->
       <section id="apiScreen" class="screen">
         <section class="surface settings-card">
           <div class="surface-header">
@@ -201,6 +209,13 @@
             当前/自定义模型名
             <input id="model" autocomplete="off" value="gpt-5.2">
           </label>
+          <label class="check-row">
+            <input id="demoMode" type="checkbox">
+            <span>
+              演示模式
+              <small>无需 API Key，直接返回稳定演示数据，适合面试现场跑完整流程。</small>
+            </span>
+          </label>
           <label>
             API Key
             <input id="apiKey" type="password" autocomplete="off" placeholder="sk-...">
@@ -209,6 +224,8 @@
         </section>
       </section>
 
+      <!-- Profile stores durable review artifacts and backup controls. Runtime
+           lecture text stays on Home until the user saves or clears it. -->
       <section id="profileScreen" class="screen">
         <section class="surface profile-card">
           <div class="profile-avatar">我</div>

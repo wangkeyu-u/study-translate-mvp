@@ -1,6 +1,9 @@
 const $ = selector => document.querySelector(selector);
 const $$ = selector => Array.from(document.querySelectorAll(selector));
 
+// Central runtime state for the single-page app. Persistent fields are mirrored
+// into localStorage; transient fields keep browser APIs, in-flight voice work,
+// and duplicate-suppression data out of saved backups.
 const state = {
   extractedText: "",
   fileNames: [],
@@ -27,10 +30,14 @@ const state = {
   agentSending: false
 };
 
+// Defaults are intentionally usable for a demo: demoMode lets interviewers run
+// the full flow without a live API key, while the same UI can switch to a real
+// OpenAI-compatible provider.
 const defaultSettings = {
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-5.2",
-  apiKey: ""
+  apiKey: "",
+  demoMode: true
 };
 
 function toast(message) {
@@ -59,6 +66,7 @@ function loadSettings() {
   $("#baseUrl").value = settings.baseUrl;
   $("#model").value = settings.model;
   $("#apiKey").value = settings.apiKey;
+  $("#demoMode").checked = Boolean(settings.demoMode);
   const preset = $(`#modelPreset option[value="${settings.model}"]`);
   $("#modelPreset").value = preset ? settings.model : "custom";
 }
@@ -67,7 +75,8 @@ function getSettings() {
   return {
     baseUrl: $("#baseUrl").value.trim() || defaultSettings.baseUrl,
     model: $("#model").value.trim() || defaultSettings.model,
-    apiKey: $("#apiKey").value.trim()
+    apiKey: $("#apiKey").value.trim(),
+    demoMode: $("#demoMode").checked
   };
 }
 
@@ -101,6 +110,8 @@ function loadCourseState() {
     state.translationLog = Array.isArray(saved.translationLog) ? saved.translationLog : [];
     state.transcript = saved.transcript || "";
     state.interimTranscript = "";
+    // Rebuild the dedupe index from persisted transcript lines so a refreshed
+    // page does not immediately re-translate old stable sentences.
     state.voiceSegmentSignatures = new Set(
       state.transcript
         .split("\n")
@@ -167,6 +178,8 @@ function parseMemoryTreeToNodes(content) {
   const roots = [];
   const stack = [];
 
+  // The memory tree is stored as readable text for export, then parsed back into
+  // editable nodes. Indentation and tree glyphs define parent-child depth.
   lines.forEach(line => {
     const prefix = line.match(/^[\s│├└─]+/)?.[0] || "";
     const label = line.replace(/^[\s│├└─]+/, "").trim();
@@ -213,6 +226,9 @@ function updateMemoryTree(treeId, updater) {
 }
 
 function truncateText(text, maxChars = 36000) {
+  // Model prompts must stay bounded because class transcripts can grow for
+  // hours. Truncating at the prompt boundary keeps the UI responsive and avoids
+  // accidental oversized requests.
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n\n[内容过长，已截取前 ${maxChars} 个字符用于本次 AI 分析]`;
 }
@@ -226,6 +242,8 @@ function scrollToLatest(selector) {
 }
 
 function normalizeVoiceSegment(text) {
+  // Normalize transcript text for duplicate detection. Punctuation and casing
+  // are ignored because browser ASR often changes them between final results.
   return String(text || "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, "")
@@ -242,6 +260,10 @@ function isLikelySpeechSegment(text) {
 
 async function askAi(messages, options = {}) {
   const settings = getSettings();
+  if (settings.demoMode) {
+    return mockAiResponse(messages, options);
+  }
+
   if (!settings.apiKey) {
     throw new Error("请先填写并保存 API Key。");
   }
@@ -265,7 +287,87 @@ async function askAi(messages, options = {}) {
   return payload.choices?.[0]?.message?.content || "";
 }
 
+function latestUserContent(messages) {
+  return [...messages].reverse().find(message => message.role === "user")?.content || "";
+}
+
+function extractAfter(text, marker) {
+  const index = text.lastIndexOf(marker);
+  if (index < 0) return "";
+  return text.slice(index + marker.length).trim();
+}
+
+function inferDemoCourseName(prompt) {
+  const match = prompt.match(/课程名称[:：]([^\n]+)/);
+  return match?.[1]?.trim() || $("#courseName").value.trim() || "Business Analytics Lecture";
+}
+
+function mockAiResponse(messages, options = {}) {
+  const prompt = latestUserContent(messages);
+  const wantsJson = options.responseFormat?.type === "json_object" || prompt.includes("输出 JSON") || prompt.includes("返回 JSON");
+
+  if (wantsJson && prompt.includes("课堂语音转写")) {
+    const source = extractAfter(prompt, "课堂语音转写：") || "The marginal cost curve intersects average total cost at its minimum point.";
+    return JSON.stringify({
+      correctedTranscript: source.replace(/\s+/g, " ").trim(),
+      translation: "边际成本曲线会在平均总成本的最低点与它相交。这个点常用来解释生产规模变化下的成本结构。"
+    });
+  }
+
+  if (wantsJson) {
+    const courseTitle = inferDemoCourseName(prompt);
+    return JSON.stringify({
+      courseTitle,
+      keyPoints: [
+        "先识别课程核心概念，再把课堂口语和课件术语对齐",
+        "实时翻译需要在低延迟和准确性之间做取舍",
+        "专业术语应优先使用课件上下文，而不是逐句孤立翻译",
+        "课后复习需要把转写、译文和术语表整理成结构化知识"
+      ],
+      terms: [
+        {
+          source: "marginal cost",
+          bestTranslation: "边际成本",
+          explanation: "每多生产一单位产品带来的额外成本",
+          risk: "容易被直译成边缘成本，影响经济学语境"
+        },
+        {
+          source: "break-even point",
+          bestTranslation: "盈亏平衡点",
+          explanation: "总收入等于总成本的位置",
+          risk: "课堂口语里可能被说得很快，ASR 易误听"
+        },
+        {
+          source: "opportunity cost",
+          bestTranslation: "机会成本",
+          explanation: "为了选择当前方案而放弃的最佳替代收益",
+          risk: "普通翻译容易忽略经济学里的固定含义"
+        }
+      ],
+      translationPitfalls: [
+        "cost curve 和 curve cost 需要结合上下文判断",
+        "老师举例、玩笑和点名不应进入复习知识树",
+        "公式、缩写和专有名词需要保留英文原词"
+      ],
+      likelyLecturePhrases: [
+        "Let's look at the graph.",
+        "This is the key takeaway.",
+        "You do not need to memorize the formula."
+      ],
+      studyQuestions: [
+        "为什么边际成本会影响生产决策？",
+        "盈亏平衡点如何从图表中读出？",
+        "机会成本和会计成本有什么区别？"
+      ]
+    });
+  }
+
+  return "演示模式回答：我会结合当前课件大纲、实时转写和译文，只围绕课程、翻译、复习和学术问题回答。";
+}
+
 function safeJsonParse(text) {
+  // Providers occasionally wrap JSON in prose or Markdown. Extracting the first
+  // JSON-looking object keeps the MVP tolerant without hiding parse failures.
   try {
     return JSON.parse(text);
   } catch {
@@ -364,6 +466,9 @@ function renderSavedMemoryTrees() {
 }
 
 function renderTreeNodes(nodes, treeId) {
+  // Render the saved memory tree as editable nested controls instead of plain
+  // preformatted text. This makes post-class review useful without another AI
+  // call.
   const list = document.createElement("ul");
   list.className = "tree-list";
 
@@ -484,6 +589,9 @@ function renderAgentMessages() {
 }
 
 function agentContext() {
+  // The floating study agent reuses the current course context instead of acting
+  // like a generic chatbot. Keep only bounded excerpts so long lectures remain
+  // safe to include in prompts.
   return [
     $("#courseName").value.trim() ? `课程名称：${$("#courseName").value.trim()}` : "",
     state.analysis ? `课件大纲和术语表：\n${analysisContext()}` : "",
@@ -598,6 +706,9 @@ async function analyzeCourse() {
 
   setBusy(button, true, "生成中");
   try {
+    // Course analysis is the main product differentiator: later translation
+    // prompts use this structured context to prefer subject-specific terms over
+    // generic dictionary translations.
     const content = await askAi([
       {
         role: "system",
@@ -662,6 +773,8 @@ function appendTranscript(text, interim = "") {
 }
 
 function renderLiveTranscript() {
+  // Interim ASR text is visible for immediacy but is not persisted as a stable
+  // sentence. Only final browser results enter the transcript history.
   const display = [state.transcript, state.interimTranscript].filter(Boolean).join(state.interimTranscript ? "\n" : "");
   $("#liveTranscript").textContent = display || "老师说的话会实时显示在这里。";
   scrollToLatest("#liveTranscript");
@@ -734,6 +847,9 @@ async function translateText(source, revision = state.lectureRevision) {
 
   try {
     const useContext = Boolean(state.analysis);
+    // One model call returns both the corrected English transcript and the
+    // target-language translation. Doing both together avoids adding a second
+    // network round trip to every spoken sentence.
     const content = await askAi([
       {
         role: "system",
@@ -762,6 +878,8 @@ ${cleanSource}`
     const result = parseSpeechAiResult(content, cleanSource);
     const correctedTranscript = result.correctedTranscript || cleanSource;
     const translation = result.translation || content.replace(/^译文[:：]\s*/i, "").trim();
+    // If the user cleared the lecture while this request was in flight, ignore
+    // the stale response so old translations do not reappear in an empty class.
     if (revision !== state.lectureRevision) return;
     replaceTranscriptLine(cleanSource, correctedTranscript);
     state.lastTranslation = translation;
@@ -788,6 +906,8 @@ ${cleanSource}`
 
 function queueVoiceTranslation(text) {
   const revision = state.lectureRevision;
+  // Serialize voice translation requests. Real classrooms produce sentences
+  // faster than some models respond, so this preserves display order.
   state.translationQueue = state.translationQueue
     .catch(() => {})
     .then(() => translateText(text, revision));
@@ -831,6 +951,8 @@ function createRecognition() {
       state.translationTimer = null;
       queueVoiceSegment(cleanText, { recordTranscript: true });
     } else {
+      // Interim text changes many times for the same spoken phrase. Showing it
+      // is useful, but translating it would create repeated half-sentences.
       const cleanInterim = interimText.trim();
       state.pendingInterim = cleanInterim;
       appendTranscript("", cleanInterim);
@@ -847,6 +969,8 @@ function createRecognition() {
     state.listening = false;
     updateVoiceUi("麦克风未开启", "已停止");
     if (state.voiceShouldRun) {
+      // Chrome may end a continuous recognition session after silence. Restart
+      // while the user still expects the app to keep listening.
       setTimeout(() => {
         if (state.voiceShouldRun && state.recognition) {
           try {
@@ -894,6 +1018,8 @@ function stopVoiceTranslation() {
 }
 
 function clearLectureRecords(options = {}) {
+  // Bump the lecture revision before clearing so any pending async translation
+  // knows its result belongs to an old class session.
   state.lectureRevision += 1;
   state.transcript = "";
   state.interimTranscript = "";
@@ -914,6 +1040,9 @@ function clearLectureRecords(options = {}) {
 }
 
 function buildMemoryTreeTemplate() {
+  // Memory tree generation is intentionally instant for the MVP. It uses the
+  // AI-produced course outline when available, then falls back to recent
+  // transcript lines so the user always gets an editable review structure.
   const courseName = $("#courseName").value.trim() || state.analysis?.courseTitle || "本节课";
   const keyPoints = state.analysis?.keyPoints?.slice(0, 6) || [];
   const terms = state.analysis?.terms?.slice(0, 6) || [];
@@ -957,11 +1086,41 @@ function generateMemoryTreeForClass() {
   toast("已生成可编辑记忆树模板，并清空本节转写和译文。");
 }
 
+function loadDemoCourse() {
+  $("#courseName").value = "Business Analytics Week 3";
+  $("#targetLanguage").value = "中文";
+  $("#manualText").value = `Lecture topic: cost-volume-profit analysis.
+
+Key terms:
+- marginal cost
+- fixed cost
+- variable cost
+- break-even point
+- opportunity cost
+
+The lecturer will explain how a company decides whether to increase production, how to read cost curves, and why opportunity cost matters when comparing different business decisions.`;
+  state.extractedText = "";
+  state.fileNames = ["demo-syllabus.txt"];
+  $("#fileStatus").textContent = "演示课件";
+  $("#profileFileCount").textContent = "1";
+  saveCourseState();
+  analyzeCourse();
+}
+
+function playDemoVoiceSegment() {
+  $("#translatorPanel").classList.remove("hidden");
+  const sample = "When marginal cost is lower than average total cost, producing one more unit pulls the average cost down.";
+  queueVoiceSegment(sample, { recordTranscript: true });
+  toast("已加入一段演示课堂语音。");
+}
+
 async function readTextLikeFile(file) {
   return await file.text();
 }
 
 function decodePdfText(buffer) {
+  // Lightweight PDF extraction for text-based slides/handouts. Scanned PDFs
+  // need OCR, so the UI also supports manually pasted course material.
   const raw = new TextDecoder("latin1").decode(buffer);
   const chunks = [];
   const literalMatches = raw.matchAll(/\((?:\\.|[^\\)])*\)\s*Tj/g);
@@ -993,6 +1152,9 @@ async function inflateRaw(bytes) {
 }
 
 async function unzipXmlFiles(buffer, predicate) {
+  // PPTX and DOCX are ZIP containers. This small reader only walks local file
+  // headers and extracts slide/document XML; it avoids adding a large parser
+  // dependency to the prototype.
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
   const files = [];
@@ -1062,6 +1224,8 @@ async function handleFiles(files) {
 
   const pieces = [];
   const names = [];
+  // Each uploaded file is wrapped with a filename marker before analysis so the
+  // model can distinguish lecture slides, notes, and pasted readings.
   for (const file of selected) {
     try {
       const text = await extractFileText(file);
@@ -1165,11 +1329,13 @@ function bindEvents() {
   $("#courseName").addEventListener("input", saveCourseState);
   $("#targetLanguage").addEventListener("change", saveCourseState);
   $("#manualText").addEventListener("input", saveCourseState);
+  $("#loadDemoCourse").addEventListener("click", loadDemoCourse);
   $("#analyzeBtn").addEventListener("click", analyzeCourse);
   $("#openTranslator").addEventListener("click", () => {
     $("#translatorPanel").classList.remove("hidden");
     startVoiceTranslation();
   });
+  $("#demoVoice").addEventListener("click", playDemoVoiceSegment);
   $("#stopVoice").addEventListener("click", stopVoiceTranslation);
   $("#generateMemoryTree").addEventListener("click", generateMemoryTreeForClass);
   $("#clearLectureRecords").addEventListener("click", () => clearLectureRecords());

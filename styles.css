@@ -1,3 +1,6 @@
+/* Design tokens shared by the app shell, cards, controls, and classroom panels.
+   Keeping them in :root makes it easy to retheme the MVP without hunting
+   through component-specific rules. */
 :root {
   color-scheme: dark;
   --ink: #f3f7fb;
@@ -15,6 +18,8 @@
   --shadow-strong: 0 28px 74px rgba(0, 0, 0, 0.42);
 }
 
+/* Global reset and app background. The background image is local so the demo
+   remains stable without network access. */
 * {
   box-sizing: border-box;
 }
@@ -46,6 +51,8 @@ button {
   padding: 22px 22px 96px;
 }
 
+/* Top-level app shell and screen switching. Only one .screen is visible at a
+   time; JavaScript toggles .active through the bottom navigation. */
 .app-topbar {
   display: flex;
   align-items: center;
@@ -107,6 +114,8 @@ button {
   backdrop-filter: blur(18px);
 }
 
+/* Home layout mirrors the product flow: course preparation on the left and live
+   translation on the right. It collapses to a single column on small screens. */
 .home-hero {
   display: flex;
   align-items: center;
@@ -311,6 +320,7 @@ textarea::placeholder {
 
 .icon-button,
 .primary-button,
+.secondary-button,
 .nav-button,
 .translate-launch {
   border: 0;
@@ -351,6 +361,7 @@ textarea::placeholder {
 }
 
 .primary-button:disabled,
+.secondary-button:disabled,
 .icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -358,6 +369,58 @@ textarea::placeholder {
 
 .full-button {
   width: 100%;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.secondary-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 86px;
+  height: 42px;
+  padding: 0 14px;
+  color: var(--ink);
+  border: 1px solid rgba(151, 174, 195, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.secondary-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(151, 174, 195, 0.24);
+  border-radius: 8px;
+  background: rgba(7, 17, 31, 0.46);
+  font-weight: 700;
+}
+
+.check-row input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+
+.check-row span {
+  display: grid;
+  gap: 4px;
+}
+
+.check-row small {
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .status-pill {
@@ -506,6 +569,8 @@ textarea::placeholder {
 }
 
 .translate-launch {
+  /* Large launch target: users should be able to start listening without hunting
+     for a small microphone control during class. */
   display: grid;
   place-items: center;
   width: 100%;
@@ -590,6 +655,9 @@ textarea::placeholder {
   gap: 12px;
 }
 
+/* Voice UI separates unstable interim transcript text from completed Chinese
+   translations. JavaScript owns the content flow; CSS keeps both boxes readable
+   for long lecture sessions. */
 .voice-toolbar {
   display: flex;
   align-items: center;
@@ -681,19 +749,6 @@ body.is-listening .voice-state {
   gap: 12px;
 }
 
-.check-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0;
-  font-weight: 700;
-}
-
-.check-row input {
-  width: 18px;
-  height: 18px;
-}
-
 .output-header {
   display: flex;
   align-items: center;
@@ -768,6 +823,8 @@ body.is-listening .voice-state {
   text-align: left;
 }
 
+/* Saved memory trees are editable review artifacts. The tree controls are
+   compact because this panel is intended for repeated post-class edits. */
 .storage-panel {
   margin-top: 24px;
   padding-top: 18px;
@@ -928,6 +985,8 @@ body.is-listening .voice-state {
 }
 
 .bottom-nav {
+  /* Fixed bottom navigation gives the prototype a mobile-app interaction model
+     while still running as a simple local web page. */
   position: fixed;
   left: 50%;
   bottom: 18px;
