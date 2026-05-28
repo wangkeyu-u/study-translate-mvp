@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>留学生课堂翻译助手</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="mobile-app">
+      <header class="app-topbar">
+        <div class="topbar-title">
+          <div class="app-mark">ST</div>
+          <div>
+            <p class="eyebrow">STUDY TRANSLATE</p>
+            <h1 id="screenTitle">首页</h1>
+          </div>
+        </div>
+        <button id="resetCourse" class="icon-button" title="清空课程">↺</button>
+      </header>
+
+      <!-- Home is the primary classroom workflow: prepare course context on the
+           left, then use it to enhance live voice translation on the right. -->
+      <section id="homeScreen" class="screen active">
+        <section class="home-hero">
+          <div>
+            <span class="hero-kicker">AI Lecture Companion</span>
+            <h2>课堂翻译助手</h2>
+            <p>先理解课件，再帮你翻译难懂的课堂内容。</p>
+          </div>
+          <img class="hero-art" src="./assets/aurora.png" alt="">
+          <span id="contextStatus" class="status-pill">未提交课件</span>
+        </section>
+
+        <section class="course-settings">
+          <label>
+            课程名称
+            <input id="courseName" placeholder="例如 Finance 201 / Biology Lab">
+          </label>
+          <label>
+            目标语言
+            <select id="targetLanguage">
+              <option value="中文">中文</option>
+              <option value="English">English</option>
+              <option value="Malay">Malay</option>
+              <option value="Japanese">Japanese</option>
+              <option value="Korean">Korean</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="home-grid">
+          <article class="surface upload-flow">
+            <div class="surface-header">
+              <div class="section-title">
+                <span class="section-icon">↑</span>
+                <div>
+                  <p class="eyebrow">LEFT</p>
+                  <h2>课件提交</h2>
+                </div>
+              </div>
+              <span id="fileStatus" class="status-pill">未上传</span>
+            </div>
+
+            <ol class="step-list">
+              <li>
+                <strong>第一步：上传文件</strong>
+                <label id="dropZone" class="drop-zone">
+                  <input id="fileInput" type="file" multiple accept=".txt,.md,.csv,.pdf,.pptx,.docx,.json">
+                  <span class="drop-icon">+</span>
+                  <span>选择或拖入课件</span>
+                  <small>支持 TXT/MD 完整读取，PDF/PPTX/DOCX 会尽力提取文本</small>
+                </label>
+                <textarea id="manualText" placeholder="也可以把课件文字、老师 syllabus、阅读材料直接粘贴到这里。"></textarea>
+              </li>
+              <li>
+                <strong>第二步：点击提交</strong>
+                <div class="button-row">
+                  <button id="analyzeBtn" class="primary-button full-button">提交并生成大纲</button>
+                  <button id="loadDemoCourse" class="secondary-button" type="button">演示课件</button>
+                </div>
+              </li>
+              <li>
+                <strong>第三步：查看 AI 课件大纲</strong>
+                <div id="analysisEmpty" class="empty-state">提交课件后，这里会显示 AI 生成的课件大纲、重点和术语表。</div>
+                <div id="analysisResult" class="analysis-result hidden">
+                  <section>
+                    <h3>课件大纲</h3>
+                    <ul id="keyPoints"></ul>
+                  </section>
+                  <section>
+                    <h3>专业术语表</h3>
+                    <div id="terms" class="term-list"></div>
+                  </section>
+                  <section>
+                    <h3>难听懂/易误译词</h3>
+                    <ul id="pitfalls"></ul>
+                  </section>
+                </div>
+              </li>
+            </ol>
+          </article>
+
+          <article class="surface translation-flow">
+            <div class="surface-header">
+              <div class="section-title">
+                <span class="section-icon mic-icon">◉</span>
+                <div>
+                  <p class="eyebrow">RIGHT</p>
+                  <h2>课堂翻译</h2>
+                </div>
+              </div>
+              <span id="translateMode" class="status-pill">普通翻译</span>
+            </div>
+
+            <button id="openTranslator" class="translate-launch">
+              <span class="launch-icon">◉</span>
+              <span>翻译</span>
+              <small>点开即可开始实时语音翻译</small>
+            </button>
+
+            <div id="advancedTranslationCard" class="advanced-translation hidden">
+              <strong>高级翻译已开启</strong>
+              <span>会根据左侧 AI 大纲、术语表和易误译词优化实时语音翻译。</span>
+            </div>
+
+            <div id="translatorPanel" class="translator-panel hidden">
+              <div class="voice-toolbar">
+                <div>
+                  <p id="voiceState" class="voice-state">麦克风未开启</p>
+                  <small>点击上方“翻译”即开始听音频，AI 会校正英文转写并生成对应中文</small>
+                </div>
+                <div class="voice-actions">
+                  <button id="demoVoice" class="secondary-button" type="button" title="模拟一句课堂语音">演示一句</button>
+                  <button id="stopVoice" class="pause-button" title="暂停语音翻译">
+                    <span>■</span>
+                    暂停
+                  </button>
+                </div>
+              </div>
+              <div class="live-box">
+                <div class="output-header">
+                  <h3>实时转写</h3>
+                  <span id="listeningBadge" class="status-pill">待开始</span>
+                </div>
+                <div id="liveTranscript" class="live-transcript">老师说的话会实时显示在这里。</div>
+              </div>
+              <div class="output-header">
+                <h3>实时译文</h3>
+                <div class="header-actions">
+                  <button id="clearLectureRecords" class="icon-button" title="清空转写和译文">↺</button>
+                  <button id="copyTranslation" class="icon-button" title="复制译文">□</button>
+                </div>
+              </div>
+              <div id="translationResult" class="translation-output">译文会显示在这里。</div>
+              <div id="translationNotes" class="notes"></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="end-class-card">
+          <div class="section-title">
+            <span class="section-icon tree-icon">⌁</span>
+            <div>
+              <p class="eyebrow">END CLASS</p>
+              <h2>本节课结束</h2>
+              <p>套用记忆树模板，保存后自动清空本节转写和译文。</p>
+            </div>
+          </div>
+          <button id="generateMemoryTree" class="primary-button">生成记忆树</button>
+        </section>
+      </section>
+
+      <!-- API settings are isolated from the classroom UI so users understand
+           that model credentials are local configuration, not course content. -->
+      <section id="apiScreen" class="screen">
+        <section class="surface settings-card">
+          <div class="surface-header">
+            <div class="section-title">
+              <span class="section-icon api-icon">⚙</span>
+              <div>
+                <p class="eyebrow">API</p>
+                <h2>连接你的 AI</h2>
+              </div>
+            </div>
+            <button id="saveSettings" class="primary-button">保存</button>
+          </div>
+          <label>
+            服务地址
+            <input id="baseUrl" autocomplete="off" value="https://api.openai.com/v1">
+          </label>
+          <label>
+            模型
+            <select id="modelPreset">
+              <option value="gpt-5.2">GPT-5.2</option>
+              <option value="gpt-5.1">GPT-5.1</option>
+              <option value="gpt-5">GPT-5</option>
+              <option value="gpt-5-mini">GPT-5 mini</option>
+              <option value="gpt-5-nano">GPT-5 nano</option>
+              <option value="gpt-4.1">GPT-4.1</option>
+              <option value="gpt-4.1-mini">GPT-4.1 mini</option>
+              <option value="gpt-4.1-nano">GPT-4.1 nano</option>
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="gpt-4o-mini">GPT-4o mini</option>
+              <option value="custom">自定义模型</option>
+            </select>
+          </label>
+          <label>
+            当前/自定义模型名
+            <input id="model" autocomplete="off" value="gpt-5.2">
+          </label>
+          <label class="check-row">
+            <input id="demoMode" type="checkbox">
+            <span>
+              演示模式
+              <small>无需 API Key，直接返回稳定演示数据，适合面试现场跑完整流程。</small>
+            </span>
+          </label>
+          <label>
+            API Key
+            <input id="apiKey" type="password" autocomplete="off" placeholder="sk-...">
+          </label>
+          <p class="hint">API Key 只保存在本机浏览器，并通过本地代理请求模型。</p>
+        </section>
+      </section>
+
+      <!-- Profile stores durable review artifacts and backup controls. Runtime
+           lecture text stays on Home until the user saves or clears it. -->
+      <section id="profileScreen" class="screen">
+        <section class="surface profile-card">
+          <div class="profile-avatar">我</div>
+          <h2>我的</h2>
+          <p>这里之后可以放课程历史、术语本、记忆树和复习记录。</p>
+          <div class="profile-stats">
+            <div>
+              <strong id="profileFileCount">0</strong>
+              <span>课件文件</span>
+            </div>
+            <div>
+              <strong id="profileContextState">未生成</strong>
+              <span>课件大纲</span>
+            </div>
+          </div>
+          <section class="memory-library">
+            <div class="output-header">
+              <h3>我的记忆树</h3>
+              <span id="memoryTreeCount" class="status-pill">0 个</span>
+            </div>
+            <div id="savedMemoryTrees" class="saved-memory-trees">
+              <div class="empty-state">命名保存后的记忆树会显示在这里。</div>
+            </div>
+          </section>
+          <section class="storage-panel">
+            <div class="output-header">
+              <h3>数据存储</h3>
+              <span id="storageStatus" class="status-pill ready">本地已开启</span>
+            </div>
+            <p class="hint">课程、大纲、译文、记忆树和 Agent 对话会保存在本机浏览器。需要云端时可先导出备份，再接数据库同步。</p>
+            <div class="storage-actions">
+              <button id="exportData" class="primary-button">导出备份</button>
+              <button id="importData" class="icon-button" title="导入备份">↥</button>
+              <input id="importDataFile" class="hidden" type="file" accept=".json,application/json">
+            </div>
+          </section>
+        </section>
+      </section>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="nav-button active" data-screen="homeScreen">
+          <span class="nav-icon">⌂</span>
+          首页
+        </button>
+        <button class="nav-button" data-screen="apiScreen">
+          <span class="nav-icon">⚙</span>
+          API
+        </button>
+        <button class="nav-button" data-screen="profileScreen">
+          <span class="nav-icon">○</span>
+          我的
+        </button>
+      </nav>
+    </main>
+
+    <div id="memoryModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="memoryModalTitle">
+      <section class="modal-card">
+        <div class="surface-header">
+          <div>
+            <p class="eyebrow">MEMORY TREE</p>
+            <h2 id="memoryModalTitle">命名记忆树</h2>
+          </div>
+          <button id="closeMemoryModal" class="icon-button" title="关闭">×</button>
+        </div>
+        <label>
+          记忆树名称
+          <input id="memoryTreeName" placeholder="例如 Week 3 Bond Pricing">
+        </label>
+        <div id="memoryTreePreview" class="memory-tree-preview"></div>
+        <div class="modal-actions">
+          <button id="saveMemoryTree" class="primary-button">保存到我的</button>
+        </div>
+      </section>
+    </div>
+
+    <aside class="agent-widget" aria-label="学术 AI Agent">
+      <button id="agentToggle" class="agent-toggle" title="打开学术 AI Agent">
+        <span>AI</span>
+      </button>
+      <section id="agentPanel" class="agent-panel hidden">
+        <div class="agent-header">
+          <div>
+            <p class="eyebrow">ACADEMIC AGENT</p>
+            <h2>学术助手</h2>
+          </div>
+          <button id="agentClose" class="icon-button" title="关闭">×</button>
+        </div>
+        <div id="agentMessages" class="agent-messages">
+          <div class="agent-message assistant">我只回答学术、课程、翻译和学习相关问题。</div>
+        </div>
+        <div class="agent-input-row">
+          <input id="agentQuestion" placeholder="问一个学术问题...">
+          <button id="agentAsk" class="primary-button">问</button>
+        </div>
+      </section>
+    </aside>
+
+    <div id="toast" class="toast"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
