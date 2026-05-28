@@ -264,6 +264,10 @@ async function askAi(messages, options = {}) {
     return mockAiResponse(messages, options);
   }
 
+  if (location.hostname.endsWith("github.io")) {
+    throw new Error("GitHub Pages 线上版没有本地 Node 代理，请开启演示模式，或在本机运行项目后使用真实 API。");
+  }
+
   if (!settings.apiKey) {
     throw new Error("请先填写并保存 API Key。");
   }
