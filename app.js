@@ -30,7 +30,7 @@ const state = {
   agentSending: false
 };
 
-// Defaults are intentionally usable for a demo: demoMode lets interviewers run
+// Defaults are intentionally usable for a demo: demoMode lets users run
 // the full flow without a live API key, while the same UI can switch to a real
 // OpenAI-compatible provider.
 const defaultSettings = {

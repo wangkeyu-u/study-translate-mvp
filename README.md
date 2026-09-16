@@ -61,7 +61,7 @@ A translation assistant for international students in English-language classroom
 
 ## AI 辅助开发方式 / AI-assisted Development
 
-本项目在开发过程中使用 Codex 作为本地工程协作工具，主要用于需求拆解、代码生成、问题定位和文档整理。实际代码围绕项目目标进行筛选、调整和验证，重点保证功能闭环、可运行性和面试演示稳定性。
+本项目在开发过程中使用 Codex 作为本地工程协作工具，主要用于需求拆解、代码生成、问题定位和文档整理。实际代码围绕项目目标进行筛选、调整和验证，重点保证功能闭环、可运行性和本地演示稳定性。
 
 Codex 在项目中的使用方式：
 
@@ -69,7 +69,7 @@ Codex 在项目中的使用方式：
 - 原型搭建：根据功能需求生成 `index.html`、`styles.css`、`app.js` 和 `server.js` 的初始结构。
 - 交互迭代：根据测试反馈调整首页/API/我的三栏导航、实时转写框、实时译文框、演示课件和演示语音入口。
 - Bug 修复：定位并修复实时语音识别中 interim transcript 重复触发翻译的问题，改成“稳定句子 -> 去重 -> AI 校正 -> 翻译”的流程。
-- 工程整理：补充工程级注释、README 说明、GitHub Pages 静态部署支持和面试演示模式。
+- 工程整理：补充工程级注释、README 说明、GitHub Pages 静态部署支持和本地演示模式。
 
 Codex 的作用是提高开发效率。项目核心设计包括：课件上下文增强翻译、语音识别结果校正、翻译队列、重复句过滤、本地数据持久化和可编辑记忆树。
 
@@ -122,7 +122,7 @@ node server.js
 http://localhost:4173
 ```
 
-面试演示时保持 API 页面的 `演示模式` 开启即可，无需填写 API Key。
+本地演示时保持 API 页面的 `演示模式` 开启即可，无需填写 API Key。
 
 For demo purposes, keep `Demo Mode` enabled on the API page. No API key is required.
 
